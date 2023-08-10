@@ -1,7 +1,7 @@
 use std::{fs, io::Error};
 
 use clap::Parser;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn, Level};
 
 #[derive(Parser)]
 #[command(name = "Oxideo Organizer")]
@@ -15,7 +15,9 @@ pub struct Cli {
 
 #[instrument]
 fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(Level::INFO)
+        .init();
 
     let cli = Cli::parse();
     let ext_list = [
@@ -40,7 +42,7 @@ fn main() -> Result<(), Error> {
 
                         let path_display = path.display();
                         if is_media {
-                            info!("Media file: {}", path_display);
+                            debug!("Media file: {}", path_display);
                             count_media += 1;
                         } else {
                             non_media_paths.push(path_display.to_string());
@@ -52,7 +54,7 @@ fn main() -> Result<(), Error> {
             }
 
             info!(
-                "Successfully parse the input. There are {} files, in which {} are detected media",
+                "Successfully parsed the input directory. There are {} files, in which {} are detected media",
                 count_all, count_media
             );
 
