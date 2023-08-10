@@ -1,6 +1,7 @@
-use std::fs;
+use std::{fs, io::Error};
 
 use clap::Parser;
+use tracing::{error, info, instrument};
 
 #[derive(Parser)]
 #[command(name = "Oxideo Organizer")]
@@ -12,24 +13,24 @@ pub struct Cli {
     output: String,
 }
 
-fn main() {
+#[instrument]
+fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
+
     let cli = Cli::parse();
-
-    println!("Hello, world!!!! {}", cli.input);
-
     match fs::read_dir(cli.input) {
-        Ok(paths) => {
+        Ok(dir_entries) => {
             let mut i = 0;
-            for path in paths {
-                println!("Name: {}", path.unwrap().path().display());
+            for dir_entry in dir_entries {
+                info!("Name: {}", dir_entry.unwrap().path().display());
                 i += 1;
             }
-            println!("\nSuccessfully parse the input. There are {} files", i);
-            // Ok(())
+            info!("Successfully parse the input. There are {} files", i);
+            Ok(())
         }
         Err(e) => {
-            eprintln!("Error listing directory: {}", e);
-            // Err(e)
+            error!("Error listing directory: {}", e);
+            Err(e)
         }
     }
 }
