@@ -1,6 +1,10 @@
-use std::{fs, io::Error};
-
+use chrono::{DateTime, Local};
 use clap::Parser;
+use std::{
+    fs,
+    io::{self, Error},
+    path::PathBuf,
+};
 use tracing::{debug, error, info, instrument, warn, Level};
 
 #[derive(Parser)]
@@ -16,7 +20,7 @@ pub struct Cli {
 #[instrument]
 fn main() -> Result<(), Error> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::INFO)
+        .with_max_level(Level::DEBUG)
         .init();
 
     let cli = Cli::parse();
@@ -44,6 +48,24 @@ fn main() -> Result<(), Error> {
                         if is_media {
                             debug!("Media file: {}", path_display);
                             count_media += 1;
+
+                            // TODO: use EXIF metadata instead for photos
+                            let metadata = fs::metadata(&path)?;
+                            let creation_time = metadata.created()?;
+                            let datetime: DateTime<Local> = DateTime::from(creation_time);
+                            let format_year = datetime.format("%Y").to_string();
+                            let format_month = datetime.format("%m").to_string();
+                            let format_date = datetime.format("%Y-%m-%d %T").to_string();
+                            debug!("creation time: {format_date}");
+
+                            let target_path =
+                                make_dir(cli.output.clone(), format_year, format_month)?;
+
+                            let dest_media_file_name = path.file_name().unwrap();
+                            let mut dest_media_path = PathBuf::from(target_path);
+                            dest_media_path.push(dest_media_file_name);
+
+                            fs::copy(&path, &dest_media_path)?;
                         } else {
                             non_media_paths.push(path_display.to_string());
                         }
@@ -71,4 +93,14 @@ fn main() -> Result<(), Error> {
             Err(e)
         }
     }
+}
+
+fn make_dir(output_dir: String, year: String, month: String) -> io::Result<String> {
+    let mut output_dir = std::path::PathBuf::from(output_dir);
+    output_dir.push("");
+    let output_dir = output_dir.to_string_lossy().into_owned();
+    let target_path = format!("{output_dir}/{year}/{year}-{month}");
+    fs::create_dir_all(&target_path)?;
+
+    Ok(target_path)
 }
