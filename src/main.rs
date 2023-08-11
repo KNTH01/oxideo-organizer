@@ -1,8 +1,9 @@
-use chrono::{DateTime, Local};
+use anyhow::Result;
+use chrono::{DateTime, Local, NaiveDateTime, ParseError};
 use clap::Parser;
 use std::{
     fs,
-    io::{self, Error},
+    io::{self},
     path::PathBuf,
 };
 use tracing::{debug, error, info, instrument, warn, Level};
@@ -18,7 +19,7 @@ pub struct Cli {
 }
 
 #[instrument]
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .init();
@@ -50,22 +51,26 @@ fn main() -> Result<(), Error> {
                             count_media += 1;
 
                             // TODO: use EXIF metadata instead for photos
-                            let metadata = fs::metadata(&path)?;
-                            let creation_time = metadata.created()?;
-                            let datetime: DateTime<Local> = DateTime::from(creation_time);
-                            let format_year = datetime.format("%Y").to_string();
-                            let format_month = datetime.format("%m").to_string();
-                            let format_date = datetime.format("%Y-%m-%d %T").to_string();
-                            debug!("creation time: {format_date}");
+                            match read_metadata(path.to_str().unwrap())? {
+                                Some(datetime) => {
+                                    let format_year = datetime.format("%Y").to_string();
+                                    let format_month = datetime.format("%m").to_string();
+                                    let format_date = datetime.format("%Y-%m-%d %T").to_string();
+                                    debug!("creation time: {format_date}");
 
-                            let target_path =
-                                make_dir(cli.output.clone(), format_year, format_month)?;
+                                    let target_path =
+                                        make_dir(cli.output.clone(), format_year, format_month)?;
 
-                            let dest_media_file_name = path.file_name().unwrap();
-                            let mut dest_media_path = PathBuf::from(target_path);
-                            dest_media_path.push(dest_media_file_name);
+                                    let dest_media_file_name = path.file_name().unwrap();
+                                    let mut dest_media_path = PathBuf::from(target_path);
+                                    dest_media_path.push(dest_media_file_name);
 
-                            fs::copy(&path, &dest_media_path)?;
+                                    fs::copy(&path, &dest_media_path)?;
+                                }
+                                None => {
+                                    warn!("Cannot parse EXIF metadata");
+                                }
+                            }
                         } else {
                             non_media_paths.push(path_display.to_string());
                         }
@@ -85,14 +90,13 @@ fn main() -> Result<(), Error> {
                     warn!("Non media files: {}", path);
                 }
             }
-
-            Ok(())
         }
         Err(e) => {
             error!("Error listing directory: {}", e);
-            Err(e)
         }
     }
+
+    Ok(())
 }
 
 fn make_dir(output_dir: String, year: String, month: String) -> io::Result<String> {
@@ -103,4 +107,28 @@ fn make_dir(output_dir: String, year: String, month: String) -> io::Result<Strin
     fs::create_dir_all(&target_path)?;
 
     Ok(target_path)
+}
+
+fn read_metadata(path: &str) -> Result<Option<NaiveDateTime>> {
+    let file = std::fs::File::open(path)?;
+    let mut bufreader = std::io::BufReader::new(&file);
+    let exifreader = exif::Reader::new();
+    let exif = exifreader.read_from_container(&mut bufreader)?;
+
+    match exif.get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY) {
+        Some(res) => {
+            let datetime = res.display_value().to_string();
+            info!("{}", datetime.to_string());
+
+            // TODO: handle error
+            let datetime = NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")?;
+            info!("{}", datetime.to_string());
+
+            Ok(Some(datetime))
+        }
+        None => {
+            warn!("not found");
+            Ok(None)
+        }
+    }
 }
