@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Local, NaiveDateTime, ParseError};
+use chrono::NaiveDateTime;
 use clap::Parser;
 use std::{
     fs,
@@ -18,6 +18,12 @@ pub struct Cli {
     output: String,
 }
 
+pub struct Counter {
+    all: u32,
+    media: u32,
+    processed: u32,
+}
+
 #[instrument]
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -34,8 +40,12 @@ fn main() -> Result<()> {
 
     match fs::read_dir(cli.input) {
         Ok(paths) => {
-            let mut count_media = 0;
-            let mut count_all = 0;
+            let mut counter = Counter {
+                all: 0,
+                media: 0,
+                processed: 0,
+            };
+
             for path in paths {
                 match path {
                     Ok(dir_entry) => {
@@ -48,9 +58,8 @@ fn main() -> Result<()> {
                         let path_display = path.display();
                         if is_media {
                             debug!("Media file: {}", path_display);
-                            count_media += 1;
+                            counter.media += 1;
 
-                            // TODO: use EXIF metadata instead for photos
                             match read_metadata(path.to_str().unwrap())? {
                                 Some(datetime) => {
                                     let format_year = datetime.format("%Y").to_string();
@@ -66,9 +75,10 @@ fn main() -> Result<()> {
                                     dest_media_path.push(dest_media_file_name);
 
                                     fs::copy(&path, &dest_media_path)?;
+                                    counter.processed += 1;
                                 }
                                 None => {
-                                    warn!("Cannot parse EXIF metadata");
+                                    warn!("Cannot get media DateTimeOriginal");
                                 }
                             }
                         } else {
@@ -77,15 +87,15 @@ fn main() -> Result<()> {
                     }
                     Err(e) => tracing::error!("Error reading directory: {}", e),
                 }
-                count_all += 1;
+                counter.all += 1;
             }
 
             info!(
-                "Successfully parsed the input directory. There are {} files, in which {} are detected media",
-                count_all, count_media
+                "Successfully parsed the input directory. There are {} files, in which {} are detected media. {} got processed.",
+                counter.all, counter.media, counter.processed
             );
 
-            if count_all > count_media {
+            if counter.all > counter.media {
                 for path in non_media_paths {
                     warn!("Non media files: {}", path);
                 }
@@ -113,22 +123,27 @@ fn read_metadata(path: &str) -> Result<Option<NaiveDateTime>> {
     let file = std::fs::File::open(path)?;
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
-    let exif = exifreader.read_from_container(&mut bufreader)?;
 
-    match exif.get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY) {
-        Some(res) => {
-            let datetime = res.display_value().to_string();
-            info!("{}", datetime.to_string());
+    match exifreader.read_from_container(&mut bufreader) {
+        Ok(exif) => match exif.get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY) {
+            Some(res) => {
+                let datetime = res.display_value().to_string();
+                if let Ok(datetime) = NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")
+                {
+                    debug!(
+                        "EXIF metadata DateTimeOriginal found: {}",
+                        datetime.to_string()
+                    );
+                    return Ok(Some(datetime));
+                }
+            }
+            None => {
+                warn!("Cannot found EXIF metadata field DateTimeOriginal");
+                return Ok(None);
+            }
+        },
+        Err(e) => error!("Cannot read EXIF metadata: {e}"),
+    };
 
-            // TODO: handle error
-            let datetime = NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M:%S")?;
-            info!("{}", datetime.to_string());
-
-            Ok(Some(datetime))
-        }
-        None => {
-            warn!("not found");
-            Ok(None)
-        }
-    }
+    Ok(None)
 }
