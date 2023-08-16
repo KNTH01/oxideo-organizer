@@ -1,8 +1,9 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use clap::Parser;
-use std::{fs, path::PathBuf};
-use tracing::{debug, error, info, instrument, warn, Level};
+use indicatif::ProgressBar;
+use std::{fs, path::PathBuf, time::Duration};
+use tracing::{debug, error, info, instrument, warn, Instrument, Level};
 
 #[derive(Parser)]
 #[command(name = "Oxideo Organizer")]
@@ -23,7 +24,8 @@ pub struct Counter {
 #[instrument]
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
+        .with_max_level(Level::INFO)
+        // .with_max_level(Level::DEBUG)
         .init();
 
     let cli = Cli::parse();
@@ -36,7 +38,14 @@ fn main() -> Result<()> {
         processed: 0,
     };
 
-    parse_input_dir(&cli.input, &cli.output, &mut counter, &mut non_media_paths)?;
+    let bar = ProgressBar::new(1000);
+    parse_input_dir(
+        &cli.input,
+        &cli.output,
+        &mut counter,
+        &mut non_media_paths,
+        &bar,
+    )?;
 
     info!("Successfully parsed the input directory. There are {} files, in which {} are detected media. {} got processed.", 
         counter.all, counter.media, counter.processed
@@ -56,6 +65,7 @@ fn parse_input_dir(
     output: &str,
     counter: &mut Counter,
     non_media_paths: &mut Vec<String>,
+    bar: &ProgressBar,
 ) -> Result<()> {
     let ext_list = [
         "jpg", "jpeg", "png", "gif", "bmp", "tiff", "ico", "heic", "webp", "svg", "raw", "mp4",
@@ -82,10 +92,12 @@ fn parse_input_dir(
                                 Some(datetime) => {
                                     copy_datetime_media(&path, output, &datetime)?;
                                     counter.processed += 1;
+                                    bar.inc(1);
                                 }
                                 None => {
                                     warn!("Cannot get media DateTimeOriginal");
                                     copy_untouched_media(&path, output)?;
+                                    bar.inc(1);
                                 }
                             }
                         } else if path.is_dir() {
@@ -94,10 +106,12 @@ fn parse_input_dir(
                                 output,
                                 counter,
                                 non_media_paths,
+                                bar,
                             )?;
                         } else if path.is_file() {
                             non_media_paths.push(path_display.to_string());
                             copy_untouched_media(&path, output)?;
+                            bar.inc(1);
                         }
                     }
                     Err(e) => tracing::error!("Error reading directory: {}", e),
