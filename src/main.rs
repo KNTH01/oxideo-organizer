@@ -80,23 +80,12 @@ fn parse_input_dir(
 
                             match read_metadata(path.to_str().unwrap()) {
                                 Some(datetime) => {
-                                    let format_year = datetime.format("%Y").to_string();
-                                    let format_month = datetime.format("%m").to_string();
-                                    let format_date = datetime.format("%Y-%m-%d %T").to_string();
-                                    debug!("creation time: {format_date}");
-
-                                    let target_path = make_dir(output, format_year, format_month)?;
-
-                                    let dest_media_file_name = path.file_name().unwrap();
-                                    let mut dest_media_path = PathBuf::from(target_path);
-                                    dest_media_path.push(dest_media_file_name);
-
-                                    fs::copy(&path, &dest_media_path)?;
+                                    copy_datetime_media(&path, output, &datetime)?;
                                     counter.processed += 1;
                                 }
                                 None => {
                                     warn!("Cannot get media DateTimeOriginal");
-                                    make_dir_untouched(&path, output)?;
+                                    copy_untouched_media(&path, output)?;
                                 }
                             }
                         } else if path.is_dir() {
@@ -108,7 +97,7 @@ fn parse_input_dir(
                             )?;
                         } else if path.is_file() {
                             non_media_paths.push(path_display.to_string());
-                            make_dir_untouched(&path, output)?;
+                            copy_untouched_media(&path, output)?;
                         }
                     }
                     Err(e) => tracing::error!("Error reading directory: {}", e),
@@ -123,17 +112,28 @@ fn parse_input_dir(
 
     Ok(())
 }
-fn make_dir(output_dir: &str, year: String, month: String) -> Result<String> {
+
+fn copy_datetime_media(path: &PathBuf, output_dir: &str, datetime: &NaiveDateTime) -> Result<()> {
+    let format_year = datetime.format("%Y").to_string();
+    let format_month = datetime.format("%m").to_string();
+    let format_date = datetime.format("%Y-%m-%d %T").to_string();
+    debug!("creation time: {format_date}");
+
     let mut output_dir = std::path::PathBuf::from(output_dir);
     output_dir.push("");
     let output_dir = output_dir.to_string_lossy().into_owned();
-    let target_path = format!("{output_dir}/{year}/{year}-{month}");
+    let target_path = format!("{output_dir}/{format_year}/{format_year}-{format_month}");
     fs::create_dir_all(&target_path)?;
 
-    Ok(target_path)
+    let dest_media_file_name = path.file_name().unwrap();
+    let mut dest_media_path = PathBuf::from(target_path);
+    dest_media_path.push(dest_media_file_name);
+
+    fs::copy(path, &dest_media_path)?;
+    Ok(())
 }
 
-fn make_dir_untouched(path: &PathBuf, dest: &str) -> Result<()> {
+fn copy_untouched_media(path: &PathBuf, dest: &str) -> Result<()> {
     let mut dest_media_path = PathBuf::new();
 
     dest_media_path.push(dest);
@@ -146,8 +146,6 @@ fn make_dir_untouched(path: &PathBuf, dest: &str) -> Result<()> {
     dest_dir.pop();
 
     fs::create_dir_all(dest_dir)?;
-
-    println!("{:?}", dest_media_path);
     fs::copy(path, &dest_media_path)?;
 
     Ok(())
