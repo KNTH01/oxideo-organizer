@@ -60,7 +60,7 @@ fn main() -> Result<()> {
                             debug!("Media file: {}", path_display);
                             counter.media += 1;
 
-                            match read_metadata(path.to_str().unwrap())? {
+                            match read_metadata(path.to_str().unwrap()) {
                                 Some(datetime) => {
                                     let format_year = datetime.format("%Y").to_string();
                                     let format_month = datetime.format("%m").to_string();
@@ -79,6 +79,8 @@ fn main() -> Result<()> {
                                 }
                                 None => {
                                     warn!("Cannot get media DateTimeOriginal");
+                                    // TODO: copy this into a separate directory
+                                    // fs::copy(&path, &dest_media_path)?;
                                 }
                             }
                         } else {
@@ -119,8 +121,15 @@ fn make_dir(output_dir: String, year: String, month: String) -> io::Result<Strin
     Ok(target_path)
 }
 
-fn read_metadata(path: &str) -> Result<Option<NaiveDateTime>> {
-    let file = std::fs::File::open(path)?;
+fn read_metadata(path: &str) -> Option<NaiveDateTime> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) => {
+            error!("Cannot open file: {e}");
+            return None;
+        }
+    };
+
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
 
@@ -134,16 +143,16 @@ fn read_metadata(path: &str) -> Result<Option<NaiveDateTime>> {
                         "EXIF metadata DateTimeOriginal found: {}",
                         datetime.to_string()
                     );
-                    return Ok(Some(datetime));
+                    return Some(datetime);
                 }
             }
             None => {
                 warn!("Cannot found EXIF metadata field DateTimeOriginal");
-                return Ok(None);
+                return None;
             }
         },
         Err(e) => error!("Cannot read EXIF metadata: {e}"),
     };
 
-    Ok(None)
+    None
 }
