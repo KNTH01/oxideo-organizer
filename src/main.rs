@@ -68,12 +68,12 @@ fn parse_input_dir(
                 match path {
                     Ok(dir_entry) => {
                         let path = dir_entry.path();
+                        let path_display = path.display();
                         let ext = path.extension().and_then(std::ffi::OsStr::to_str);
                         let is_media = ext
                             .map(|e| ext_list.contains(&e.to_lowercase().as_str()))
                             .unwrap_or(false);
 
-                        let path_display = path.display();
                         if is_media {
                             debug!("Media file: {}", path_display);
                             counter.media += 1;
@@ -139,8 +139,6 @@ fn copy_untouched_media(path: &PathBuf, dest: &str) -> Result<()> {
     dest_media_path.push(dest);
     dest_media_path.push("untouched");
     dest_media_path.push(path);
-
-    println!("{:?}", path);
 
     let mut dest_dir = dest_media_path.clone();
     dest_dir.pop();
