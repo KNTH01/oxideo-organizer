@@ -1,58 +1,11 @@
+use crate::counter::{Counter, Counters};
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use indicatif::ProgressBar;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{
-    fs,
-    path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::{fs, path::PathBuf};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
-
-pub struct Counter {
-    all: AtomicUsize,
-    media: AtomicUsize,
-    processed: AtomicUsize,
-}
-
-impl Default for Counter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Counter {
-    pub fn new() -> Self {
-        Self {
-            all: AtomicUsize::new(0),
-            media: AtomicUsize::new(0),
-            processed: AtomicUsize::new(0),
-        }
-    }
-
-    fn increment(&self, counter: Counters) {
-        match counter {
-            Counters::All => self.all.fetch_add(1, Ordering::SeqCst),
-            Counters::Media => self.media.fetch_add(1, Ordering::SeqCst),
-            Counters::Processed => self.processed.fetch_add(1, Ordering::SeqCst),
-        };
-    }
-
-    fn get(&self, counter: Counters) -> usize {
-        match counter {
-            Counters::All => self.all.load(Ordering::SeqCst),
-            Counters::Media => self.media.load(Ordering::SeqCst),
-            Counters::Processed => self.processed.load(Ordering::SeqCst),
-        }
-    }
-}
-
-enum Counters {
-    All,
-    Media,
-    Processed,
-}
 
 struct List {
     non_media_paths: Vec<PathBuf>,
@@ -68,11 +21,7 @@ pub struct Organizer<'a> {
 impl<'a> Organizer<'a> {
     pub fn new(input: &'a str, output: &'a str) -> Self {
         Self {
-            counter: Counter {
-                all: AtomicUsize::new(0),
-                media: AtomicUsize::new(0),
-                processed: AtomicUsize::new(0),
-            },
+            counter: Counter::default(),
             input,
             output,
             list: List {
@@ -95,7 +44,6 @@ impl<'a> Organizer<'a> {
         let progress = ProgressBar::new(v1.len() as u64);
 
         v1.par_iter().for_each(|entry| {
-            self.counter.all.fetch_add(1, Ordering::SeqCst);
             let path = entry.path();
             if path.is_file() {
                 debug!("{}", path.display());

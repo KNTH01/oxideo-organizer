@@ -4,6 +4,7 @@ use organizer::Organizer;
 use tracing::{instrument, warn, Level};
 
 pub mod organizer;
+pub mod counter;
 
 #[derive(Parser)]
 #[command(name = "Oxideo Organizer")]
