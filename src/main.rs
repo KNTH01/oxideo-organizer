@@ -17,15 +17,16 @@ pub struct Cli {
 
 #[instrument]
 fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        // .with_max_level(Level::INFO)
-        .with_max_level(Level::DEBUG)
-        .init();
+    // tracing_subscriber::fmt()
+    //     .with_max_level(Level::INFO)
+    //     // .with_max_level(Level::DEBUG)
+    //     .init();
 
     let cli = Cli::parse();
 
-    let mut o = Organizer::new(&cli.input, &cli.output);
+    let o = Organizer::new(&cli.input, &cli.output);
     o.walk_dir(&cli.input)?;
 
     Ok(())
 }
+

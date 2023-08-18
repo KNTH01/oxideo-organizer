@@ -2,14 +2,56 @@ use anyhow::Result;
 use chrono::NaiveDateTime;
 use indicatif::ProgressBar;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 pub struct Counter {
-    pub all: u32,
-    pub media: u32,
-    pub processed: u32,
+    all: AtomicUsize,
+    media: AtomicUsize,
+    processed: AtomicUsize,
+}
+
+impl Default for Counter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Counter {
+    pub fn new() -> Self {
+        Self {
+            all: AtomicUsize::new(0),
+            media: AtomicUsize::new(0),
+            processed: AtomicUsize::new(0),
+        }
+    }
+
+    fn increment(&self, counter: Counters) {
+        match counter {
+            Counters::All => self.all.fetch_add(1, Ordering::SeqCst),
+            Counters::Media => self.media.fetch_add(1, Ordering::SeqCst),
+            Counters::Processed => self.processed.fetch_add(1, Ordering::SeqCst),
+        };
+    }
+
+    fn get(&self, counter: Counters) -> usize {
+        match counter {
+            Counters::All => self.all.load(Ordering::SeqCst),
+            Counters::Media => self.media.load(Ordering::SeqCst),
+            Counters::Processed => self.processed.load(Ordering::SeqCst),
+        }
+    }
+}
+
+enum Counters {
+    All,
+    Media,
+    Processed,
 }
 
 struct List {
@@ -27,9 +69,9 @@ impl<'a> Organizer<'a> {
     pub fn new(input: &'a str, output: &'a str) -> Self {
         Self {
             counter: Counter {
-                all: 0,
-                media: 0,
-                processed: 0,
+                all: AtomicUsize::new(0),
+                media: AtomicUsize::new(0),
+                processed: AtomicUsize::new(0),
             },
             input,
             output,
@@ -47,13 +89,13 @@ impl<'a> Organizer<'a> {
 
         let v1 = WalkDir::new(input)
             .into_iter()
-            // FILTER no dir
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
         let progress = ProgressBar::new(v1.len() as u64);
 
         v1.par_iter().for_each(|entry| {
+            self.counter.all.fetch_add(1, Ordering::SeqCst);
             let path = entry.path();
             if path.is_file() {
                 debug!("{}", path.display());
@@ -68,12 +110,12 @@ impl<'a> Organizer<'a> {
                 if is_media {
                     debug!("Media file: {}", path_display);
 
-                    // self.counter.media += 1;
+                    self.counter.increment(Counters::Media);
 
                     match self.read_metadata(path.to_str().unwrap()) {
                         Some(datetime) => {
                             self.copy_datetime_media(&path_buf, &datetime).unwrap();
-                            // self.counter.processed += 1;
+                            self.counter.increment(Counters::Processed);
                         }
                         None => {
                             warn!("Cannot get media DateTimeOriginal");
@@ -84,25 +126,26 @@ impl<'a> Organizer<'a> {
                     // self.list.non_media_paths.push(path.to_path_buf());
                     self.copy_untouched_media(&path_buf).unwrap();
                 }
-                // self.counter.all += 1;
+                self.counter.increment(Counters::All);
             } else if path.is_dir() {
                 // bar.inc(1);
             }
-
+            progress.println(format!("Log Message: {}", self.counter.get(Counters::All)));
             progress.inc(1);
         });
 
-        progress.finish();
-
         info!("Successfully parsed the input directory. There are {} files, in which {} are detected media. {} got processed.",
-            self.counter.all, self.counter.media, self.counter.processed
+        self.counter.get(Counters::All), self.counter.get(Counters::Media), self.counter.get(Counters::Processed)
         );
 
-        if self.counter.all > self.counter.media {
+        if self.counter.get(Counters::All) > self.counter.get(Counters::Media) {
             for path in &self.list.non_media_paths {
                 warn!("Non media file: {}", path.as_path().display());
             }
         }
+
+        progress.finish();
+
         Ok(())
     }
 
