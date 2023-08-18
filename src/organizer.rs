@@ -162,7 +162,7 @@ impl<'a> Organizer<'a> {
         dest_media_path.push(dest_media_file_name);
 
         fs::copy(path, &dest_media_path)?;
-        
+
         Ok(())
     }
 
