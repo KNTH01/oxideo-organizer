@@ -1,7 +1,7 @@
 use crate::counter::{Counter, Counters};
 use anyhow::Result;
 use chrono::NaiveDateTime;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fs, path::PathBuf};
 use tracing::{debug, error, info, warn};
@@ -43,13 +43,23 @@ impl<'a> Organizer<'a> {
 
         let progress = ProgressBar::new(v1.len() as u64);
 
+        progress.set_style(
+            ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+            )
+            .unwrap(),
+        );
+
         v1.par_iter().for_each(|entry| {
             let path = entry.path();
+            let path_display = path.display();
+
+            progress.set_message(path_display.to_string());
+
             if path.is_file() {
                 debug!("{}", path.display());
 
                 let path_buf = path.to_path_buf();
-                let path_display = path.display();
                 let ext = path.extension().and_then(std::ffi::OsStr::to_str);
                 let is_media = ext
                     .map(|e| ext_list.contains(&e.to_lowercase().as_str()))
@@ -75,12 +85,13 @@ impl<'a> Organizer<'a> {
                     self.copy_untouched_media(&path_buf).unwrap();
                 }
                 self.counter.increment(Counters::All);
-            } else if path.is_dir() {
-                // bar.inc(1);
             }
-            progress.println(format!("Log Message: {}", self.counter.get(Counters::All)));
+
             progress.inc(1);
         });
+
+        progress.set_message("Done");
+        progress.finish();
 
         info!("Successfully parsed the input directory. There are {} files, in which {} are detected media. {} got processed.",
         self.counter.get(Counters::All), self.counter.get(Counters::Media), self.counter.get(Counters::Processed)
@@ -91,8 +102,6 @@ impl<'a> Organizer<'a> {
                 warn!("Non media file: {}", path.as_path().display());
             }
         }
-
-        progress.finish();
 
         Ok(())
     }
@@ -170,4 +179,3 @@ impl<'a> Organizer<'a> {
         Ok(())
     }
 }
-
