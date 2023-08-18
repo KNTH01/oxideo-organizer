@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::NaiveDateTime;
 use indicatif::ProgressBar;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fs, path::PathBuf};
 use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
@@ -38,60 +39,64 @@ impl<'a> Organizer<'a> {
         }
     }
 
-    pub fn walk_dir(&mut self, input: &str) -> Result<()> {
+    pub fn walk_dir(&self, input: &str) -> Result<()> {
         let ext_list = [
             "jpg", "jpeg", "png", "gif", "bmp", "tiff", "ico", "heic", "webp", "svg", "raw", "mp4",
             "mov", "avi", "3gp", "mkv", "flv", "wmv", "mpeg", "webm",
         ];
 
-        //     let bar = ProgressBar::new(1000);
+        let v1 = WalkDir::new(input)
+            .into_iter()
+            // FILTER no dir
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
-        for entry in WalkDir::new(input) {
-            match entry {
-                Ok(entry) => {
-                    let path = entry.path();
-                    if path.is_file() {
-                        debug!("{}", path.display());
+        let progress = ProgressBar::new(v1.len() as u64);
 
-                        let path_buf = path.to_path_buf();
-                        let path_display = path.display();
-                        let ext = path.extension().and_then(std::ffi::OsStr::to_str);
-                        let is_media = ext
-                            .map(|e| ext_list.contains(&e.to_lowercase().as_str()))
-                            .unwrap_or(false);
+        v1.par_iter().for_each(|entry| {
+            let path = entry.path();
+            if path.is_file() {
+                debug!("{}", path.display());
 
-                        if is_media {
-                            debug!("Media file: {}", path_display);
+                let path_buf = path.to_path_buf();
+                let path_display = path.display();
+                let ext = path.extension().and_then(std::ffi::OsStr::to_str);
+                let is_media = ext
+                    .map(|e| ext_list.contains(&e.to_lowercase().as_str()))
+                    .unwrap_or(false);
 
-                            self.counter.media += 1;
+                if is_media {
+                    debug!("Media file: {}", path_display);
 
-                            match self.read_metadata(path.to_str().unwrap()) {
-                                Some(datetime) => {
-                                    self.copy_datetime_media(&path_buf, &datetime)?;
-                                    self.counter.processed += 1;
-                                    // bar.inc(1);
-                                }
-                                None => {
-                                    warn!("Cannot get media DateTimeOriginal");
-                                    self.copy_untouched_media(&path_buf)?;
-                                    // bar.inc(1);
-                                }
-                            }
-                        } else {
-                            self.list.non_media_paths.push(path.to_path_buf());
-                            self.copy_untouched_media(&path_buf)?;
-                            // bar.inc(1);
+                    // self.counter.media += 1;
+
+                    match self.read_metadata(path.to_str().unwrap()) {
+                        Some(datetime) => {
+                            self.copy_datetime_media(&path_buf, &datetime).unwrap();
+                            // self.counter.processed += 1;
                         }
-                        self.counter.all += 1;
+                        None => {
+                            warn!("Cannot get media DateTimeOriginal");
+                            self.copy_untouched_media(&path_buf).unwrap();
+                        }
                     }
+                } else {
+                    // self.list.non_media_paths.push(path.to_path_buf());
+                    self.copy_untouched_media(&path_buf).unwrap();
                 }
-                Err(e) => tracing::error!("Error reading directory: {}", e),
+                // self.counter.all += 1;
+            } else if path.is_dir() {
+                // bar.inc(1);
             }
-        }
+
+            progress.inc(1);
+        });
+
+        progress.finish();
 
         info!("Successfully parsed the input directory. There are {} files, in which {} are detected media. {} got processed.",
-        self.counter.all, self.counter.media, self.counter.processed
-    );
+            self.counter.all, self.counter.media, self.counter.processed
+        );
 
         if self.counter.all > self.counter.media {
             for path in &self.list.non_media_paths {
@@ -174,3 +179,4 @@ impl<'a> Organizer<'a> {
         Ok(())
     }
 }
+

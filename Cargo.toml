@@ -12,5 +12,6 @@ tracing-subscriber = "0.3"
 chrono = "0.4"
 kamadak-exif = "0.5.5"
 anyhow = "1.0.72"
-indicatif = "0.17.6"
+indicatif = { version = "0.17.6", features = ["rayon"] }
 walkdir = "2.3.3"
+rayon = "1.7.0"
