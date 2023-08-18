@@ -50,7 +50,7 @@ impl<'a> Organizer<'a> {
             .unwrap(),
         );
 
-        v1.par_iter().for_each(|entry| {
+        v1.par_iter().try_for_each(|entry| -> Result<()> {
             let path = entry.path();
             let path_display = path.display();
 
@@ -72,23 +72,25 @@ impl<'a> Organizer<'a> {
 
                     match self.read_metadata(path.to_str().unwrap()) {
                         Some(datetime) => {
-                            self.copy_datetime_media(&path_buf, &datetime).unwrap();
+                            self.copy_datetime_media(&path_buf, &datetime)?;
                             self.counter.increment(Counters::Processed);
                         }
                         None => {
                             warn!("Cannot get media DateTimeOriginal");
-                            self.copy_untouched_media(&path_buf).unwrap();
+                            self.copy_untouched_media(&path_buf)?;
                         }
                     }
                 } else {
                     // self.list.non_media_paths.push(path.to_path_buf());
-                    self.copy_untouched_media(&path_buf).unwrap();
+                    self.copy_untouched_media(&path_buf)?;
                 }
                 self.counter.increment(Counters::All);
             }
 
             progress.inc(1);
-        });
+
+            Ok(())
+        })?;
 
         progress.set_message("Done");
         progress.finish();
@@ -160,6 +162,7 @@ impl<'a> Organizer<'a> {
         dest_media_path.push(dest_media_file_name);
 
         fs::copy(path, &dest_media_path)?;
+        
         Ok(())
     }
 
