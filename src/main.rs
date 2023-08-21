@@ -1,10 +1,12 @@
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::Parser;
 use organizer::Organizer;
 use tracing::{instrument, warn, Level};
 
-pub mod organizer;
 pub mod counter;
+pub mod organizer;
 
 #[derive(Parser)]
 #[command(name = "Oxideo Organizer")]
@@ -12,8 +14,8 @@ pub mod counter;
 #[command(version = "0.1.0")]
 #[command(about = "Automagically sort photos for you!", long_about = None)]
 pub struct Cli {
-    input: String,
-    output: String,
+    input: PathBuf,
+    output: PathBuf,
 }
 
 #[instrument]
@@ -25,9 +27,11 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let o = Organizer::new(&cli.input, &cli.output);
-    o.walk_dir(&cli.input)?;
+    let input = cli.input.to_str().unwrap();
+    let output = cli.output.to_str().unwrap();
+    
+    let o = Organizer::new(input, output);
+    o.walk_dir(input)?;
 
     Ok(())
 }
-
